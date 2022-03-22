@@ -7,11 +7,9 @@ class MapleApi:
         self,
         backend,
         database_url: str,
-        *,
-        model_exclude_out = [],
+        # *,
     ):
         self.backend = backend
-        self.model_exclude_out = model_exclude_out
 
         if database_url.startswith('mongo'):
             from .db_mongo import MongoAdapter

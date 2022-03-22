@@ -24,7 +24,6 @@ class MongoAdapter(DataBaseAdapter):
 
 
     def get_datas(self, table_name, query):
-        print('query:', query)
         l = self.db[table_name].find(query)
         return list(l)
     

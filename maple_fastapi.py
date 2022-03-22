@@ -1,5 +1,6 @@
 from fastapi import Request, Path
 from typing import List, Any, Dict, Optional
+from pydantic import BaseModel
 from pydantic.fields import Undefined
 from fastapi.params import ParamTypes, Param
 from functools import wraps
@@ -13,13 +14,11 @@ class MFastAPI(MapleApi):
         self,
         backend,
         database_url: str,
-        *,
-        model_exclude_out = [],
+        # *,
     ):
         super().__init__(
             backend,
             database_url,
-            model_exclude_out=model_exclude_out,
         )
         print('backend: fastapi')
 
@@ -43,11 +42,13 @@ class MFastAPI(MapleApi):
             # print(m)
             table_name = utils.conv_under_line(m.__name__.split('.')[-1])
             # print(path)
-            model_in = utils.get_new_model_from_pydantic_model_by_flag(m, flag='x_in')
-            if self.model_exclude_out:
-                model_out = utils.get_new_model_from_pydantic_model_by_flag(m, flag='x_out')
+            model_in = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_in', suffix='_In')
+            if utils.has_flag_from_pydantic_model(m, flag='x_exclude_out'):
+                model_out = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_exclude_out', reverse=True, suffix='_Out')
             else:
-                model_out = utils.get_new_model_from_pydantic_model_by_exclude_flag(m, exclude_flag='x_exclude_out')
+                model_out = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_out', suffix='_Out')
+            model_query = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_query', suffix='_Query', is_optional=True)
+
 
             path = '/api/' + table_name + '/{id}'
             self.gen_get_one_api(
@@ -62,6 +63,7 @@ class MFastAPI(MapleApi):
             path = '/api/' + table_name + 's'
             self.gen_get_many_api(
                 table_name,
+                model_query,
                 router_kwargs = {
                     'path': path,
                     'response_model': List[model_out],
@@ -80,7 +82,7 @@ class MFastAPI(MapleApi):
 
     def gen_get_one_api(
         self,
-        table_name = None,
+        table_name: str = None,
         *,
         router_kwargs: dict,
         request = None,
@@ -96,14 +98,15 @@ class MFastAPI(MapleApi):
 
     def gen_get_many_api(
         self,
-        table_name = None,
+        table_name: str = None,
+        model_query: BaseModel = None,
         *,
         router_kwargs: dict,
         request = None,
         x_extra_datas = None,
     ):
         @self.backend.get(**router_kwargs)
-        @x_set_query
+        @x_set_query(model_query=model_query)
         def get_func(
             request: Request,
             x_extra_datas = XParam(),
@@ -202,18 +205,24 @@ def get_request(request_dict):
     return None
 
 
-def x_set_query(func):
-    @wraps(func)
-    async def wrap_func(*args, **kwargs):
-        if 'x_extra_datas' in kwargs:
-            kwargs['x_extra_datas'] = {}    # new 一个字典对象，避免被传参污染
-            x_extra_datas = kwargs.get('x_extra_datas', None)
+def x_set_query(
+    model_query: BaseModel = None,
+):
+    def func_decorator(func):
+        @wraps(func)
+        async def func_wrap(*args, **kwargs):
+            if 'x_extra_datas' in kwargs:
+                kwargs['x_extra_datas'] = {}    # new 一个字典对象，避免被传参污染
+                x_extra_datas = kwargs.get('x_extra_datas', None)
 
-            request = get_request(kwargs)
-            query_params = dict(request.query_params)
+                request = get_request(kwargs)
+                query_params = dict(request.query_params)
 
-        # print(kwargs)
+                x_extra_datas['query'] = model_query(**query_params).dict(exclude_none=True)
 
-        ret_api = func(*args, **kwargs)
-        return ret_api
-    return wrap_func
+            print(kwargs)
+
+            ret_api = func(*args, **kwargs)
+            return ret_api
+        return func_wrap
+    return func_decorator
