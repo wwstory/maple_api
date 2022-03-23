@@ -73,9 +73,9 @@ def build_new_model_from_pydantic_model_by_flag(m: BaseModel, flag='x_in', *, re
         sub_model = pydantic_subclass(m, new_model_name, include_fields=fields)
 
     if is_optional:
-        class tmp_model(sub_model, metaclass=AllOptional):
+        class auto_gen_model(sub_model, metaclass=AllOptional):
             ...
-        sub_model = tmp_model
+        sub_model = auto_gen_model
     return sub_model
 
 
@@ -214,6 +214,9 @@ def pydantic_subclass(
         {
             "__fields__": {
                 k: copy.copy(v) for k, v in base.__fields__.items() if k in field_names
+            },
+            "__annotations__": {
+                k: copy.copy(v) for k, v in base.__annotations__.items() if k in field_names
             },
         },
     )
