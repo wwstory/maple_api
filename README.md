@@ -20,7 +20,7 @@ m_app = MFastAPI(app, database_url=mongo_url, prefix='/api')
 class User(BaseModel):
     id: int
     username: str = Field(..., x_unique=True, x_in=True, x_out=True, x_query=True)
-    email: str = Field('', x_in=True, x_out=True)
+    email: str = Field('', x_in=True, x_out=True, x_update=True)
     password: str = Field(..., x_in=True)
     nickname: str = Field(None, x_exclude_out=True)
 
