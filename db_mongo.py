@@ -19,7 +19,7 @@ class MongoAdapter(DataBaseAdapter):
 
 
     def get_data(self, table_name, query):
-        d = self.db[table_name].find_one(query)
+        d = self.db[table_name].find_one(trim_dict_none(query))
         return d
 
 
@@ -29,7 +29,7 @@ class MongoAdapter(DataBaseAdapter):
 
 
     def get_datas(self, table_name, query):
-        l = self.db[table_name].find(query)
+        l = self.db[table_name].find(trim_dict_none(query))
         return list(l)
     
 
@@ -41,14 +41,28 @@ class MongoAdapter(DataBaseAdapter):
         else:
             raise
         return ret
-    
 
-    def update_data(self, table_name, old_data, new_data):
-        ...
+
+    def update_data(self, table_name, query, new_data):
+        ret = self.db[table_name].update_one(
+            trim_dict_none(query), 
+            {'$set': trim_dict_none(new_data)},
+        )
+        return ret
+
+
+    def update_data_by_id(self, table_name, query, new_data):
+        if isinstance(new_data, dict):
+            data = new_data
+        elif isinstance(new_data, BaseModel):
+            data = new_data.dict()
+        else:
+            raise
+        return self.update_data(table_name, {'id': query['id']}, data)
 
 
     def delete_data(self, table_name, query):
-        d = self.db[table_name].delete_one(query)
+        d = self.db[table_name].delete_one(trim_dict_none(query))
         return d
 
 
@@ -93,3 +107,7 @@ def get_collection_counter_id(db: Database, collection_name='test') -> int:
         projection={'id': True, '_id': False},  # 返回的字段
     )
     return result.get('id')
+
+
+def trim_dict_none(d: dict):
+    return {k: v for k, v in d.items() if v is not None}

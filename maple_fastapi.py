@@ -61,6 +61,7 @@ class MFastAPI(MapleApi):
             else:
                 model_out = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_out', suffix='_Out')
             model_query = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_query', suffix='_Query', is_optional=True)
+            model_put = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_update', suffix='_Put', is_optional=True)
 
             # gen api
             path = self.prefix + '/' + table_name + '/{id}'
@@ -102,7 +103,16 @@ class MFastAPI(MapleApi):
                 table_name,
                 router_kwargs = {
                     'path': path,
-                    'response_model': model_out,
+                },
+            )
+
+            path = self.prefix + '/' + table_name + '/{id}'
+            self.gen_put_api(
+                router,
+                table_name,
+                model_put,
+                router_kwargs = {
+                    'path': path,
                 },
             )
 
@@ -208,6 +218,29 @@ class MFastAPI(MapleApi):
             query.update({'id': id})
             self.db_adapter.delete_data_by_id(table_name, query)
             return {'id': id}
+
+
+    def gen_put_api(
+        self,
+        router,
+        table_name: str = None,
+        model_put: BaseModel = None,
+        *,
+        router_kwargs: dict,
+        request = None,
+        x_extra_datas = None,
+    ):
+        @router.put(**router_kwargs)
+        def put_func(
+            request: Request,
+            m: model_put,
+            id: int = Path(...),
+            x_extra_datas = XParam(),
+        ):
+            query = x_extra_datas.get('query', {})
+            query.update({'id': id})
+            self.db_adapter.update_data_by_id(table_name, query, m)
+            return {}
 
 
 class XParamClass(Param):
