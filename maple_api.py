@@ -7,9 +7,12 @@ class MapleApi:
         self,
         backend,
         database_url: str,
-        # *,
+        *,
+        database_id_auto_incr = True,
     ):
         self.backend = backend
+        self.api_dict = {}
+        self.database_id_auto_incr = database_id_auto_incr
 
         if database_url.startswith('mongo'):
             from .db_mongo import MongoAdapter
@@ -22,6 +25,10 @@ class MapleApi:
 
     def get_db(self):
         return self.db_adapter.get_db()
+
+
+    def get_api_dict(self):
+        return self.api_dict
 
 
     def get(self, *args, **kwargs):

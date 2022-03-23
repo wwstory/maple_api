@@ -1,4 +1,4 @@
-from fastapi import Request, Path
+from fastapi import APIRouter, Request, Path
 from typing import List, Any, Dict, Optional
 from pydantic import BaseModel
 from pydantic.fields import Undefined
@@ -14,13 +14,22 @@ class MFastAPI(MapleApi):
         self,
         backend,
         database_url: str,
-        # *,
+        *,
+        database_id_auto_incr = True,
+        prefix: str = ''
     ):
         super().__init__(
             backend,
             database_url,
+            database_id_auto_incr = database_id_auto_incr,
         )
+        self.prefix = prefix
         print('backend: fastapi')
+
+
+
+    def get_api_dict(self):
+        return {(router.path, list(router.methods)[0]): router.endpoint for router in self.backend.routes}
 
 
     def gen_api(
@@ -39,8 +48,12 @@ class MFastAPI(MapleApi):
         models,
     ):
         for m in models:
+            # prepare
             # print(m)
             table_name = utils.conv_under_line(m.__name__.split('.')[-1])
+            router = APIRouter(tags=[table_name])
+
+            # build model
             # print(path)
             model_in = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_in', suffix='_In')
             if utils.has_flag_from_pydantic_model(m, flag='x_exclude_out'):
@@ -49,9 +62,10 @@ class MFastAPI(MapleApi):
                 model_out = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_out', suffix='_Out')
             model_query = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_query', suffix='_Query', is_optional=True)
 
-
-            path = '/api/' + table_name + '/{id}'
-            self.gen_get_one_api(
+            # gen api
+            path = self.prefix + '/' + table_name + '/{id}'
+            self.gen_get_api(
+                router,
                 table_name,
                 router_kwargs = {
                     'path': path,
@@ -59,9 +73,9 @@ class MFastAPI(MapleApi):
                 },
             )
 
-
-            path = '/api/' + table_name + 's'
+            path = self.prefix + '/' + table_name + 's'
             self.gen_get_many_api(
+                router,
                 table_name,
                 model_query,
                 router_kwargs = {
@@ -69,6 +83,31 @@ class MFastAPI(MapleApi):
                     'response_model': List[model_out],
                 },
             )
+
+            path = self.prefix + '/' + table_name
+            self.gen_post_api(
+                router,
+                table_name,
+                model_in,
+                m,
+                router_kwargs = {
+                    'path': path,
+                    'response_model': model_out,
+                },
+            )
+
+            path = self.prefix + '/' + table_name + '/{id}'
+            self.gen_delete_api(
+                router,
+                table_name,
+                router_kwargs = {
+                    'path': path,
+                    'response_model': model_out,
+                },
+            )
+
+            # finish
+            self.backend.include_router(router)
 
 
     def gen_complex_api_for_mongo(
@@ -80,8 +119,9 @@ class MFastAPI(MapleApi):
             print(field_dict)
 
 
-    def gen_get_one_api(
+    def gen_get_api(
         self,
+        router,
         table_name: str = None,
         *,
         router_kwargs: dict,
@@ -91,13 +131,20 @@ class MFastAPI(MapleApi):
         # @self.backend.get(**router_kwargs)
         # def get_func(id: int = Path(...)):
         #     return self.db_adapter.get_data(table_name, query={'id': id})
-        def get_func(id: int = Path(...)):
-            return self.db_adapter.get_data(table_name, query={'id': id})
-        self.backend.get(**router_kwargs)(get_func)
+        def get_func(
+            request: Request,
+            id: int = Path(...),
+            x_extra_datas = XParam(),
+        ):
+            query = x_extra_datas.get('query', {})
+            query.update({'id': id})
+            return self.db_adapter.get_data_by_id(table_name, query=query)
+        router.get(**router_kwargs)(get_func)
 
 
     def gen_get_many_api(
         self,
+        router,
         table_name: str = None,
         model_query: BaseModel = None,
         *,
@@ -105,14 +152,62 @@ class MFastAPI(MapleApi):
         request = None,
         x_extra_datas = None,
     ):
-        @self.backend.get(**router_kwargs)
+        @router.get(**router_kwargs)
         @x_set_query(model_query=model_query)
-        def get_func(
+        def get_many_func(
             request: Request,
             x_extra_datas = XParam(),
         ):
             query = x_extra_datas.get('query', {})
             return self.db_adapter.get_datas(table_name, query=query)
+
+
+    def gen_post_api(
+        self,
+        router,
+        table_name: str = None,
+        model_in: BaseModel = None,
+        model_db: BaseModel = None,
+        *,
+        router_kwargs: dict,
+        request = None,
+        x_extra_datas = None,
+    ):
+        try:    # mongo数据库
+            from pymongo.database import Database
+            if isinstance(self.get_db(), Database):
+                @router.post(**router_kwargs)
+                @x_set_mongo_in(database=self.get_db(), model_db=model_db, database_id_auto_incr=self.database_id_auto_incr)
+                def post_func(
+                    m: model_in,
+                    request: Request,
+                    x_extra_datas = XParam(),
+                ):
+                    self.db_adapter.create_data(table_name, m)
+                    return model_db(**m.dict())
+        except:
+            ...
+
+
+    def gen_delete_api(
+        self,
+        router,
+        table_name: str = None,
+        *,
+        router_kwargs: dict,
+        request = None,
+        x_extra_datas = None,
+    ):
+        @router.delete(**router_kwargs)
+        def delete_func(
+            request: Request,
+            id: int = Path(...),
+            x_extra_datas = XParam(),
+        ):
+            query = x_extra_datas.get('query', {})
+            query.update({'id': id})
+            self.db_adapter.delete_data_by_id(table_name, query)
+            return {'id': id}
 
 
 class XParamClass(Param):
@@ -198,7 +293,7 @@ def XParam(
 
 
 def get_request(request_dict):
-    for k, v in request_dict.items():
+    for _, v in request_dict.items():
         if isinstance(v, Request):
             return v
     print('未传入Reuqest类型的参数!')
@@ -220,7 +315,49 @@ def x_set_query(
 
                 x_extra_datas['query'] = model_query(**query_params).dict(exclude_none=True)
 
-            print(kwargs)
+            # print(kwargs)
+
+            ret_api = func(*args, **kwargs)
+            return ret_api
+        return func_wrap
+    return func_decorator
+
+
+def x_set_mongo_in(
+    database,
+    model_db,
+    database_id_auto_incr = True,
+):
+    def func_decorator(func):
+        @wraps(func)
+        async def func_wrap(*args, **kwargs):
+            if 'm' in kwargs:
+                try:    # 如果是mongo数据库，且带id字段，使用自增
+                    from pymongo.database import Database
+                    if isinstance(database, Database):
+                        if database_id_auto_incr:
+                            def get_and_inc_collection_counter_id(db: Database, collection_name='test') -> int:
+                                result = db['counter_id'].find_one_and_update(
+                                    {'collection': collection_name},    # 查询
+                                    {'$inc': {'id': 1}},                # 递增字段
+                                    upsert=True,                        # 如果不存在，将新建
+                                    projection={'id': True, '_id': False},  # 返回的字段
+                                    return_document=True,               # 返回递增前(False)，还是递增后(True)的结果
+                                )
+                                return result.get('id')
+                        
+                            m = kwargs.get('m', None)
+                            if 'id' not in m.dict() and 'id' in model_db.schema()['properties']:
+                                new_m = model_db(**m.dict(), id=get_and_inc_collection_counter_id(database, model_db.__name__))
+                            elif 'id' in new_m.dict():
+                                new_m = model_db(**m.dict())
+                                new_m.id = get_and_inc_collection_counter_id(database, model_db.__name__)
+                            kwargs['m'] = new_m
+
+                except:
+                    ...
+
+                # print(kwargs)
 
             ret_api = func(*args, **kwargs)
             return ret_api
