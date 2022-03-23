@@ -6,8 +6,6 @@
 ```python
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
-from typing import Optional
-import os
 from typing import List
 
 from maple_api.maple_fastapi import MFastAPI
@@ -16,18 +14,23 @@ from maple_api.maple_fastapi import MFastAPI
 app = FastAPI()
 mongo_url = 'mongodb://root:123456@127.0.0.1:27017/test'
 
-m_app = MFastAPI(app, database_url=mongo_url)
+m_app = MFastAPI(app, database_url=mongo_url, prefix='/api')
 
 
 class User(BaseModel):
-    # 暂不支持嵌套类
     id: int
-    username: str = Field(..., x_unique=True, x_in=True, x_out=True)
-    email: str = Field(..., x_in=True, x_out=True)
+    username: str = Field(..., x_unique=True, x_in=True, x_out=True, x_query=True)
+    email: str = Field('', x_in=True, x_out=True)
     password: str = Field(..., x_in=True)
     nickname: str = Field(None, x_exclude_out=True)
 
     class X_Config:
+        api = [
+            {
+                'path': '/abc',
+                'query': [{'$and': ['username', 'email']}]
+            }
+        ]
         query = [{'$or': ['username', 'email']}]
 
 
@@ -49,4 +52,6 @@ def root():
 
 m_app.gen_api(['index'])
 
+from pprint import pprint
+pprint(m_app.get_api_dict())
 ```
