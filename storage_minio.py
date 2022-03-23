@@ -1,6 +1,5 @@
 from minio import Minio
 from minio.error import InvalidResponseError
-from starlette.datastructures import UploadFile
 import os
 from datetime import timedelta
 from uuid import uuid4
@@ -78,20 +77,14 @@ class MinioAdapter(StorageAdapter):
         return self.client
 
 
-    def upload_object(self, file: UploadFile, prefix='', bucket_name=None, use_uuid=True):
+    def upload_object(self, file, prefix='', bucket_name=None, use_uuid=True, file_name=None):
         bucket_name = bucket_name or self.bucket
         try:
-            print(type(file), isinstance(file, UploadFile))
-            if isinstance(file, UploadFile):   # 属于UploadFile类型的文件
-                file_size = os.fstat(file.file.fileno()).st_size
-                file_name = f'{uuid4()}{os.path.splitext(file.filename)[1]}' if use_uuid else file.filename
-                file_name = os.path.join(prefix, file_name)
-                self.client.put_object(bucket_name, file_name, file.file, file_size)
-            else:
-                file_size = os.fstat(file.fileno()).st_size
-                file_name = f'{uuid4()}{os.path.splitext(file.name)[1]}' if use_uuid else file.name
-                file_name = os.path.join(prefix, file_name)
-                self.client.put_object(bucket_name, file_name, file, file_size)
+            file_size = os.fstat(file.fileno()).st_size
+            file_name = file_name or str(file.name)
+            file_name = (f'{uuid4()}{os.path.splitext(str(file_name))[1]}' if use_uuid else file_name) if file_name else f'{uuid4()}'
+            file_name = os.path.join(prefix, file_name)
+            self.client.put_object(bucket_name, file_name, file, file_size)
             return file_name
         except InvalidResponseError as e:
             raise e

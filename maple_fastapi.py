@@ -280,9 +280,8 @@ class MFastAPI(MapleApi):
         ):
             query = x_extra_datas.get('query', {})
             query.update({'id': id})
-            file_name = self.sto_adapter.upload_object(file)
+            file_name = self.sto_adapter.upload_object(file.file, file_name=file.filename)
             file_url = self.sto_adapter.get_object_url(file_name)
-            print(file_url)
             self.db_adapter.update_data_by_id(table_name, query, {update_filed_name: file_url})
             return {}
 
