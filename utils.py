@@ -60,6 +60,14 @@ def get_fields_name_from_pydantic_model_by_flag(m: BaseModel, flag='x_unique', *
         return [field for field, prop in all_field_dict.items() if flag in prop]
 
 
+def get_fields_name_from_pydantic_model(m: BaseModel) -> list:
+    '''
+    从Pydantic模型中获取字段名
+    '''
+    all_field_dict = get_fields_from_pydantic_model(m)
+    return [field for field, _ in all_field_dict.items()]
+
+
 def build_new_model_from_pydantic_model_by_flag(m: BaseModel, flag='x_in', *, reverse=False, suffix='In', is_optional=False):
     '''
     从旧模型中，将带/不带有flag标志的字段构建新模型

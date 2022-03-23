@@ -6,25 +6,36 @@ class MapleApi:
     def __init__(
         self,
         backend,
-        database_url: str,
+        database_conf: dict,
         *,
+        storage_conf: dict = None,
         database_id_auto_incr = True,
     ):
+        '''
+        database_conf: {
+            'name': 'mongo',
+            'url': '',
+        }
+        '''
         self.backend = backend
         self.api_dict = {}
         self.database_id_auto_incr = database_id_auto_incr
 
-        if database_url.startswith('mongo'):
+        if database_conf['name'] == 'mongo':
             from .db_mongo import MongoAdapter
-            self.db_adapter = MongoAdapter(database_url)
+            self.db_adapter = MongoAdapter(**database_conf)
+
+        if storage_conf['name'] == 'minio':
+            from .storage_minio import MinioAdapter
+            self.sto_adapter = MinioAdapter(**storage_conf)
 
 
     def get_backend(self):
         return self.backend
 
 
-    def get_db(self):
-        return self.db_adapter.get_db()
+    def get_db_client(self):
+        return self.db_adapter.get_client()
 
 
     def get_api_dict(self):

@@ -9,12 +9,12 @@ from .db_adapter import DataBaseAdapter
 
 
 class MongoAdapter(DataBaseAdapter):
-    def __init__(self, url: str):
+    def __init__(self, url: str, **kwargs):
         client = MongoClient(url)
         self.db = client[url.split('/')[-1]]
 
 
-    def get_db(self):
+    def get_client(self):
         return self.db
 
 

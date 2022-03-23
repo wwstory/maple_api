@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Path
+from fastapi import FastAPI, APIRouter, Request, Path, File, UploadFile
 from typing import List, Any, Dict, Optional
 from pydantic import BaseModel
 from pydantic.fields import Undefined
@@ -12,15 +12,20 @@ from . import utils
 class MFastAPI(MapleApi):
     def __init__(
         self,
-        backend,
-        database_url: str,
+        database_conf: dict,
+        backend = None,
         *,
+        storage_conf: dict = None,
         database_id_auto_incr = True,
         prefix: str = ''
     ):
+        if backend is None:
+            backend = FastAPI()
+
         super().__init__(
             backend,
-            database_url,
+            database_conf,
+            storage_conf = storage_conf,
             database_id_auto_incr = database_id_auto_incr,
         )
         self.prefix = prefix
@@ -49,12 +54,10 @@ class MFastAPI(MapleApi):
     ):
         for m in models:
             # prepare
-            # print(m)
             table_name = utils.conv_under_line(m.__name__.split('.')[-1])
             router = APIRouter(tags=[table_name])
 
             # build model
-            # print(path)
             model_in = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_in', suffix='_In')
             if utils.has_flag_from_pydantic_model(m, flag='x_exclude_out'):
                 model_out = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_exclude_out', reverse=True, suffix='_Out')
@@ -64,57 +67,72 @@ class MFastAPI(MapleApi):
             model_put = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_update', suffix='_Put', is_optional=True)
 
             # gen api
-            path = self.prefix + '/' + table_name + '/{id}'
-            self.gen_get_api(
-                router,
-                table_name,
-                router_kwargs = {
-                    'path': path,
-                    'response_model': model_out,
-                },
-            )
+            if hasattr(self, 'db_adapter'):    # 存在数据库适配器
+                path = self.prefix + '/' + table_name + '/{id}'
+                self.gen_get_api(
+                    router,
+                    table_name,
+                    router_kwargs = {
+                        'path': path,
+                        'response_model': model_out,
+                    },
+                )
 
-            path = self.prefix + '/' + table_name + 's'
-            self.gen_get_many_api(
-                router,
-                table_name,
-                model_query,
-                router_kwargs = {
-                    'path': path,
-                    'response_model': List[model_out],
-                },
-            )
+                path = self.prefix + '/' + table_name + 's'
+                self.gen_get_many_api(
+                    router,
+                    table_name,
+                    model_query,
+                    router_kwargs = {
+                        'path': path,
+                        'response_model': List[model_out],
+                    },
+                )
 
-            path = self.prefix + '/' + table_name
-            self.gen_post_api(
-                router,
-                table_name,
-                model_in,
-                m,
-                router_kwargs = {
-                    'path': path,
-                    'response_model': model_out,
-                },
-            )
+                path = self.prefix + '/' + table_name
+                self.gen_post_api(
+                    router,
+                    table_name,
+                    model_in,
+                    m,
+                    router_kwargs = {
+                        'path': path,
+                        'response_model': model_out,
+                    },
+                )
 
-            path = self.prefix + '/' + table_name + '/{id}'
-            self.gen_delete_api(
-                router,
-                table_name,
-                router_kwargs = {
-                    'path': path,
-                },
-            )
+                path = self.prefix + '/' + table_name + '/{id}'
+                self.gen_delete_api(
+                    router,
+                    table_name,
+                    router_kwargs = {
+                        'path': path,
+                    },
+                )
 
-            path = self.prefix + '/' + table_name + '/{id}'
-            self.gen_put_api(
-                router,
-                table_name,
-                model_put,
-                router_kwargs = {
-                    'path': path,
-                },
-            )
+                path = self.prefix + '/' + table_name + '/{id}'
+                self.gen_put_api(
+                    router,
+                    table_name,
+                    model_put,
+                    router_kwargs = {
+                        'path': path,
+                    },
+                )
+
+            if hasattr(self, 'sto_adapter'):    # 存在存储适配器
+                model_file = utils.build_new_model_from_pydantic_model_by_flag(m, flag='x_file', suffix='_File', is_optional=True)
+                fields_name = utils.get_fields_name_from_pydantic_model(model_file)
+                for field_name in fields_name:
+                    path = self.prefix + '/' + table_name + '/{id}' + '/file' + '/' + field_name
+                    self.gen_upload_api(
+                        router,
+                        table_name,
+                        field_name,
+                        router_kwargs = {
+                            'path': path,
+                        },
+                    )
 
             # finish
             self.backend.include_router(router)
@@ -185,9 +203,9 @@ class MFastAPI(MapleApi):
     ):
         try:    # mongo数据库
             from pymongo.database import Database
-            if isinstance(self.get_db(), Database):
+            if isinstance(self.get_db_client(), Database):
                 @router.post(**router_kwargs)
-                @x_set_mongo_in(database=self.get_db(), model_db=model_db, database_id_auto_incr=self.database_id_auto_incr)
+                @x_set_mongo_in(database=self.get_db_client(), model_db=model_db, database_id_auto_incr=self.database_id_auto_incr)
                 def post_func(
                     m: model_in,
                     request: Request,
@@ -240,6 +258,32 @@ class MFastAPI(MapleApi):
             query = x_extra_datas.get('query', {})
             query.update({'id': id})
             self.db_adapter.update_data_by_id(table_name, query, m)
+            return {}
+
+
+    def gen_upload_api(
+        self,
+        router,
+        table_name: str = None,
+        update_filed_name: str = None,
+        *,
+        router_kwargs: dict,
+        request = None,
+        x_extra_datas = None,
+    ):
+        @router.put(**router_kwargs)
+        def upload_func(
+            request: Request,
+            id: int = Path(...),
+            file: UploadFile = File(...),
+            x_extra_datas = XParam(),
+        ):
+            query = x_extra_datas.get('query', {})
+            query.update({'id': id})
+            file_name = self.sto_adapter.upload_object(file)
+            file_url = self.sto_adapter.get_object_url(file_name)
+            print(file_url)
+            self.db_adapter.update_data_by_id(table_name, query, {update_filed_name: file_url})
             return {}
 
 

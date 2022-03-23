@@ -1,5 +1,8 @@
 class DataBaseAdapter:
-    def get_db(self):
+    def __init__(self, **kwargs):
+        ...
+
+    def get_client(self):
         ...
 
     def get_data(self, table_name, query):
@@ -11,7 +14,7 @@ class DataBaseAdapter:
     def create_data(self, table_name, data):
         ...
 
-    def update_data(self, table_name, old_data, new_data):
+    def update_data(self, table_name, query, new_data):
         ...
 
     def delete_data(self, table_name, query):
