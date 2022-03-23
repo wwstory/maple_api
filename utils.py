@@ -72,10 +72,13 @@ def build_new_model_from_pydantic_model_by_flag(m: BaseModel, flag='x_in', *, re
     else:
         sub_model = pydantic_subclass(m, new_model_name, include_fields=fields)
 
+    # if is_optional:
+    #     class auto_gen_model(sub_model, metaclass=AllOptional):
+    #         ...
+    #     sub_model = auto_gen_model
+
     if is_optional:
-        class auto_gen_model(sub_model, metaclass=AllOptional):
-            ...
-        sub_model = auto_gen_model
+        sub_model = build_optional_model(sub_model, new_model_name)
     return sub_model
 
 
@@ -225,13 +228,20 @@ def pydantic_subclass(
 
 
 # ref: https://stackoverflow.com/questions/67699451/make-every-fields-as-optional-with-pydantic
-class AllOptional(pydantic.main.ModelMetaclass):
-    def __new__(self, name, bases, namespaces, **kwargs):
-        annotations = namespaces.get('__annotations__', {})
-        for base in bases:
-            annotations.update(base.__annotations__)
-        for field in annotations:
-            if not field.startswith('__'):
-                annotations[field] = Optional[annotations[field]]
-        namespaces['__annotations__'] = annotations
-        return super().__new__(self, name, bases, namespaces, **kwargs)
+# class AllOptional(pydantic.main.ModelMetaclass):
+#     def __new__(self, name, bases, namespaces, **kwargs):
+#         annotations = namespaces.get('__annotations__', {})
+#         for base in bases:
+#             annotations.update(base.__annotations__)
+#         for field in annotations:
+#             if not field.startswith('__'):
+#                 annotations[field] = Optional[annotations[field]]
+#         namespaces['__annotations__'] = annotations
+#         return super().__new__(self, name, bases, namespaces, **kwargs)
+
+
+def build_optional_model(m: BaseModel, new_model_name='tmp') -> BaseModel:
+    fields_dict = {k: copy.copy(v) for k, v in m.__fields__.items()}
+    # build_fields_dict = {k: (Optional[v.outer_type_], ...) for k, v in fields_dict.items()}
+    build_fields_dict = {k: (Optional[v.outer_type_], None) for k, v in fields_dict.items()}
+    return pydantic.create_model(new_model_name, **build_fields_dict)
